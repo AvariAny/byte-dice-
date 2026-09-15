@@ -2,8 +2,13 @@ import { defineConfig, type HtmlTagDescriptor, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
-
-import siteConfiguration from './.figma/make/site.json'
+// Originally read from ./.figma/make/site.json (Figma Make's internal config
+// file, not needed for a normal deploy). Replaced with plain defaults so the
+// build doesn't depend on that file existing.
+const siteConfiguration: FigmaSiteConfiguration = {
+  title: 'Byte Dice',
+  description: 'Aprende puertas lógicas jugando',
+}
 
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
