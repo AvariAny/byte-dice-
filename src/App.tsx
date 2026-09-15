@@ -767,9 +767,10 @@ function GuideScreen({ onBack }: { onBack: () => void }) {
 }
 
 // ── Game screen ───────────────────────────────────────────────────────────────
-function GameScreen({ onGameOver, onLevelUp }: {
+function GameScreen({ onGameOver, onLevelUp, onMap }: {
   onGameOver: (xp: number) => void;
   onLevelUp: (level: number, xp: number, cb: () => void) => void;
+  onMap: () => void;
 }) {
   const [lives, setLives] = useState(3);
   const [xp, setXp] = useState(0);
@@ -782,12 +783,24 @@ function GameScreen({ onGameOver, onLevelUp }: {
   const [shakeHud, setShakeHud] = useState(false);
   const [questionNum, setQuestionNum] = useState(1);
   const [showGuide, setShowGuide] = useState(false);
+  const [guideMood, setGuideMood] = useState<BotMood>("idle");
+  const [guideMsg, setGuideMsg] = useState<string>(GUIDE_MESSAGES.game);
 
   const nextPuzzle = useCallback((currentLevel: number) => {
     setSelected(null); setFeedback(null);
     setPuzzle(generatePuzzle(currentLevel));
     setQuestionNum((q) => q + 1);
+    setGuideMood("idle");
+    setShowGuide(false);
   }, []);
+
+  const toggleHint = () => {
+    if (!showGuide) {
+      setGuideMood("thinking");
+      setGuideMsg(HINT_MESSAGES[puzzle.type] ?? GUIDE_MESSAGES.game);
+    }
+    setShowGuide((v) => !v);
+  };
 
   const handleAnswer = (answer: 0 | 1) => {
     if (feedback !== null) return;
@@ -795,6 +808,11 @@ function GameScreen({ onGameOver, onLevelUp }: {
     const correct = answer === puzzle.answer;
     if (correct) {
       setFeedback("correct");
+      const newStreakCount = streak + 1;
+      const streakMsg = STREAK_MESSAGES[newStreakCount];
+      setGuideMood("happy");
+      setGuideMsg(streakMsg ?? CORRECT_MESSAGES[Math.floor(Math.random() * CORRECT_MESSAGES.length)]);
+      setShowGuide(true);
       const gained = XP_PER_CORRECT + (streak >= 2 ? 10 : 0);
       const newXp = xp + gained;
       setScore((s) => s + gained);
@@ -805,10 +823,13 @@ function GameScreen({ onGameOver, onLevelUp }: {
         setLevel(newLevel);
         setTimeout(() => onLevelUp(newLevel, newXp, () => nextPuzzle(newLevel)), 600);
       } else {
-        setTimeout(() => nextPuzzle(level), 700);
+        setTimeout(() => nextPuzzle(level), 900);
       }
     } else {
       setFeedback("wrong");
+      setGuideMood("sad");
+      setGuideMsg(WRONG_MESSAGES[Math.floor(Math.random() * WRONG_MESSAGES.length)]);
+      setShowGuide(true);
       const newXp = Math.max(0, xp + XP_PER_WRONG);
       setXp(newXp);
       setStreak(0);
@@ -816,18 +837,23 @@ function GameScreen({ onGameOver, onLevelUp }: {
       setLives(newLives);
       setShakeHud(true);
       setTimeout(() => setShakeHud(false), 500);
-      if (newLives <= 0) setTimeout(() => onGameOver(score), 900);
-      else setTimeout(() => nextPuzzle(level), 900);
+      if (newLives <= 0) setTimeout(() => onGameOver(score), 1100);
+      else setTimeout(() => nextPuzzle(level), 1100);
     }
   };
 
   return (
     <div className="flex flex-col px-5 pt-5 pb-8 gap-4" style={{ minHeight: "100dvh", background: "#07080f" }}>
+      <div className="flex items-center justify-between">
+        <button className="btn-outline px-3 py-1.5 text-xs rounded" onClick={onMap}>[ MAPA ]</button>
+        <span className="text-xs" style={{ color: "#6b7280", fontFamily: "'JetBrains Mono'" }}>NIVEL {level}</span>
+      </div>
+
       <div className={`panel p-4 flex flex-col gap-3 ${shakeHud ? "shake" : ""}`}>
         <div className="flex items-center justify-between">
           <Lives lives={lives} />
-          <button onClick={() => setShowGuide((v) => !v)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-            <GuideBot size={28} />
+          <button onClick={toggleHint} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+            <GuideBot size={28} mood={guideMood} glow={showGuide} />
           </button>
           <div className="flex flex-col items-end gap-0.5">
             <span className="text-xs" style={{ color: "#6b7280", fontFamily: "'JetBrains Mono'" }}>PUNTOS</span>
@@ -841,7 +867,9 @@ function GameScreen({ onGameOver, onLevelUp }: {
         </div>
       </div>
 
-      {showGuide && <GuideDialog screen="game" onClose={() => setShowGuide(false)} />}
+      {showGuide && (
+        <GuideDialog screen="game" mood={guideMood} customMsg={guideMsg} onClose={() => setShowGuide(false)} />
+      )}
 
       <div className="flex flex-col gap-1">
         <p className="text-xs tracking-widest" style={{ color: "#6b7280", fontFamily: "'JetBrains Mono'" }}>&gt; CALCULA LA SALIDA:</p>
@@ -997,7 +1025,7 @@ export default function App() {
         />
       )}
       {screen === "game" && (
-        <GameScreen key={gameKey} onGameOver={handleGameOver} onLevelUp={handleLevelUp} />
+        <GameScreen key={gameKey} onGameOver={handleGameOver} onLevelUp={handleLevelUp} onMap={() => setScreen("map")} />
       )}
       {screen === "levelup" && levelUpData && (
         <LevelUpScreen level={levelUpData.level} xp={levelUpData.xp} onContinue={handleLevelUpContinue} />
