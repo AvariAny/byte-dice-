@@ -1,4 +1,5 @@
-const CACHE_NAME = "byte-dice-v1";
+// Bump this on every deploy that needs to bust the old cached copy.
+const CACHE_NAME = "byte-dice-v2";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -13,11 +14,28 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Cache-first for static assets, network-first fallback for navigation.
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
 
+  // Page loads: always try the network first so a new deploy shows up
+  // right away. Only fall back to the cached copy when offline.
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  // Static assets (JS/CSS/images) have a hash in their filename, so
+  // it's safe to serve them from cache first and only hit the network
+  // when a file wasn't cached yet.
   event.respondWith(
     caches.open(CACHE_NAME).then(async (cache) => {
       const cached = await cache.match(request);
