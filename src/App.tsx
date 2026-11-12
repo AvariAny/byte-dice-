@@ -1015,7 +1015,7 @@ export default function App() {
   };
 
   const handleLevelUp = (level: number, xp: number, cb: () => void) => {
-    setCurrentLevel(level);
+    setCurrentLevel((prev) => Math.max(prev, level));
     setLevelUpData({ level, xp, cb });
     setScreen("levelup");
   };
@@ -1056,7 +1056,7 @@ export default function App() {
         <MapScreen
           currentLevel={currentLevel}
           highScore={highScore}
-          onSelectLevel={(lvl) => { setCurrentLevel((prev) => Math.max(prev, lvl)); startGame(lvl); }}
+          onSelectLevel={(lvl) => startGame(lvl)}
           onHome={() => setScreen("home")}
         />
       )}
