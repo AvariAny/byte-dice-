@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { sfx, isMuted, setMuted, subscribeMute, unlockAudio } from "./sound";
 
 type Screen = "home" | "guide" | "map" | "game" | "gameover" | "levelup";
 
@@ -767,15 +768,16 @@ function GuideScreen({ onBack }: { onBack: () => void }) {
 }
 
 // ── Game screen ───────────────────────────────────────────────────────────────
-function GameScreen({ onGameOver, onLevelUp, onMap }: {
+function GameScreen({ startLevel, onGameOver, onLevelUp, onMap }: {
+  startLevel: number;
   onGameOver: (xp: number) => void;
   onLevelUp: (level: number, xp: number, cb: () => void) => void;
   onMap: () => void;
 }) {
   const [lives, setLives] = useState(3);
-  const [xp, setXp] = useState(0);
-  const [level, setLevel] = useState(1);
-  const [puzzle, setPuzzle] = useState(() => generatePuzzle(1));
+  const [xp, setXp] = useState((startLevel - 1) * XP_PER_LEVEL);
+  const [level, setLevel] = useState(startLevel);
+  const [puzzle, setPuzzle] = useState(() => generatePuzzle(startLevel));
   const [selected, setSelected] = useState<0 | 1 | null>(null);
   const [feedback, setFeedback] = useState<"correct" | "wrong" | null>(null);
   const [streak, setStreak] = useState(0);
@@ -808,6 +810,7 @@ function GameScreen({ onGameOver, onLevelUp, onMap }: {
     const correct = answer === puzzle.answer;
     if (correct) {
       setFeedback("correct");
+      sfx("correct");
       const newStreakCount = streak + 1;
       const streakMsg = STREAK_MESSAGES[newStreakCount];
       setGuideMood("happy");
@@ -821,12 +824,13 @@ function GameScreen({ onGameOver, onLevelUp, onMap }: {
       setXp(newXp);
       if (newLevel > level) {
         setLevel(newLevel);
-        setTimeout(() => onLevelUp(newLevel, newXp, () => nextPuzzle(newLevel)), 600);
+        setTimeout(() => { sfx("levelup"); onLevelUp(newLevel, newXp, () => nextPuzzle(newLevel)); }, 600);
       } else {
         setTimeout(() => nextPuzzle(level), 900);
       }
     } else {
       setFeedback("wrong");
+      sfx("wrong");
       setGuideMood("sad");
       setGuideMsg(WRONG_MESSAGES[Math.floor(Math.random() * WRONG_MESSAGES.length)]);
       setShowGuide(true);
@@ -837,7 +841,7 @@ function GameScreen({ onGameOver, onLevelUp, onMap }: {
       setLives(newLives);
       setShakeHud(true);
       setTimeout(() => setShakeHud(false), 500);
-      if (newLives <= 0) setTimeout(() => onGameOver(score), 1100);
+      if (newLives <= 0) setTimeout(() => { sfx("gameover"); onGameOver(score); }, 1100);
       else setTimeout(() => nextPuzzle(level), 1100);
     }
   };
@@ -983,7 +987,26 @@ export default function App() {
   const [finalXp, setFinalXp] = useState(0);
   const [highScore, setHighScore] = useState(0);
   const [currentLevel, setCurrentLevel] = useState(1);
+  const [startLevel, setStartLevel] = useState(1);
+  const [muted, setMutedState] = useState(isMuted());
   const [levelUpData, setLevelUpData] = useState<{ level: number; xp: number; cb: () => void } | null>(null);
+
+  useEffect(() => subscribeMute(() => setMutedState(isMuted())), []);
+
+  // Los navegadores solo dejan sonar audio tras un toque: arrancamos ahí.
+  useEffect(() => {
+    const unlock = () => { unlockAudio(); };
+    const click = (e: MouseEvent) => {
+      const el = e.target as HTMLElement;
+      if (el.closest("button") && !el.closest(".mute-btn")) sfx("click");
+    };
+    window.addEventListener("pointerdown", unlock, { once: true });
+    document.addEventListener("click", click);
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      document.removeEventListener("click", click);
+    };
+  }, []);
 
   const handleGameOver = (xp: number) => {
     setFinalXp(xp);
@@ -1004,12 +1027,25 @@ export default function App() {
     cb?.();
   };
 
+  const startGame = (lvl: number) => {
+    setStartLevel(lvl);
+    setGameKey((k) => k + 1);
+    setScreen("game");
+  };
+
   return (
-    <div style={{ maxWidth: 430, margin: "0 auto", minHeight: "100dvh", position: "relative", background: "#07080f" }}>
+    <div className="app-shell">
       <div className="scanline-overlay" />
+      <button
+        className="btn-outline mute-btn"
+        aria-label={muted ? "Activar sonido" : "Silenciar"}
+        onClick={() => { unlockAudio(); sfx("click"); setMuted(!muted); }}
+      >
+        {muted ? "🔇" : "🔊"}
+      </button>
       {screen === "home" && (
         <HomeScreen
-          onPlay={() => { setGameKey((k) => k + 1); setScreen("game"); }}
+          onPlay={() => startGame(1)}
           onGuide={() => setScreen("guide")}
           onMap={() => setScreen("map")}
           highScore={highScore}
@@ -1020,18 +1056,21 @@ export default function App() {
         <MapScreen
           currentLevel={currentLevel}
           highScore={highScore}
-          onSelectLevel={(lvl) => { setGameKey((k) => k + 1); setCurrentLevel(lvl); setScreen("game"); }}
+          onSelectLevel={(lvl) => { setCurrentLevel((prev) => Math.max(prev, lvl)); startGame(lvl); }}
           onHome={() => setScreen("home")}
         />
       )}
-      {screen === "game" && (
-        <GameScreen key={gameKey} onGameOver={handleGameOver} onLevelUp={handleLevelUp} onMap={() => setScreen("map")} />
+      {/* El juego se queda montado durante "levelup" (solo oculto) para no perder nivel ni XP */}
+      {(screen === "game" || screen === "levelup") && (
+        <div style={{ display: screen === "game" ? "block" : "none" }}>
+          <GameScreen key={gameKey} startLevel={startLevel} onGameOver={handleGameOver} onLevelUp={handleLevelUp} onMap={() => setScreen("map")} />
+        </div>
       )}
       {screen === "levelup" && levelUpData && (
         <LevelUpScreen level={levelUpData.level} xp={levelUpData.xp} onContinue={handleLevelUpContinue} />
       )}
       {screen === "gameover" && (
-        <GameOverScreen xp={finalXp} highScore={highScore} onRestart={() => { setGameKey((k) => k + 1); setScreen("game"); }} onHome={() => setScreen("home")} />
+        <GameOverScreen xp={finalXp} highScore={highScore} onRestart={() => startGame(1)} onHome={() => setScreen("home")} />
       )}
     </div>
   );
